@@ -1,0 +1,76 @@
+{
+  "summary": {
+    "model": "convaiinnovations/laya-multilingual",
+    "data": "data/benchmark.example.jsonl",
+    "timestamp": "2026-10-06T11:16:58.273612+00:00",
+    "choice": {
+      "n": 1,
+      "accuracy": 1.0,
+      "brier_mean": 0.0,
+      "ece": 0.0274
+    },
+    "score": {
+      "n": 1,
+      "accuracy": 1.0,
+      "brier_mean": 0.3684,
+      "ece": 0.8441
+    },
+    "noul": {
+      "n": 1,
+      "accuracy": 0.0,
+      "brier_mean": 0.714,
+      "ece": 0.845
+    },
+    "overall": {
+      "n": 3,
+      "accuracy": 0.6667,
+      "brier_mean": 0.3608,
+      "ece": 0.5722
+    },
+    "errors": 0,
+    "option_flip_rate": 0.0,
+    "option_flip_n": 1
+  },
+  "records": [
+    {
+      "question_id": "billing-001",
+      "type": "choice",
+      "category": "customer_support",
+      "answer": "billing",
+      "predicted": "billing",
+      "correct": true,
+      "confidence": 0.9726,
+      "brier": 4.08399999999997e-05
+    },
+    {
+      "question_id": "severity-001",
+      "type": "score",
+      "category": "incident_triage",
+      "answer": 1,
+      "predicted_level": 1,
+      "expected_score": 1.2789,
+      "correct": true,
+      "confidence": 0.1559,
+      "brier": 0.36841214
+    },
+    {
+      "question_id": "privacy-001",
+      "type": "noul",
+      "category": "privacy",
+      "answer": false,
+      "predicted": true,
+      "p_true": 0.845,
+      "correct": false,
+      "confidence": 0.845,
+      "brier": 0.7140249999999999
+    }
+  ],
+  "flip_test": [
+    {
+      "question_id": "billing-001",
+      "original": "billing",
+      "flipped": "billing",
+      "flipped_result": false
+    }
+  ]
+}
