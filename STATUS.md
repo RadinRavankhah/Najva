@@ -90,6 +90,37 @@
 
 ---
 
+## Translation cost estimate (English → Persian, before training)
+
+**Workload:** translate the natural-language fields (`state`, `instructions`, `criteria`) of a Jev-formatted English dataset while keeping option keys, label indices, and soft targets untouched.
+
+| Source dataset size | Avg words/row | Total English words | Total tokens (×1.3) |
+|:---|:---:|---:|---:|
+| POC (500 examples) | ~50 | 25,000 | 325K |
+| Production (5,000) | ~50 | 250,000 | 3.25M |
+| Research quality (10,000+) | ~50 | 500,000+ | 6.5M+ |
+
+**Estimated cost to translate 5,000 examples (production):**
+
+| Method | Cost | Quality | Notes |
+|:---|:---|:---|:---|
+| **GPT-4o mini / Claude Haiku** (API) | **$0.05–0.20** | Good — prompt to keep keys/labels untouched | Cheapest reliable option; batch with `messages` array |
+| **GPT-4o / Claude Sonnet 4** (API) | **$0.80–2.00** | Better on nuance, sarcasm, تعارف | Use for a 5–10% sample instead of all rows |
+| Google Cloud / DeepL API | **$25–30** | Good | Per-character pricing hurts; no structural awareness of Jev rows |
+| Helsinki-NLP Opus-MT (en→fa) | **$0** | Fair | Offline; `opus-mt-en-fa`; may mangage Persian script/digits |
+| Argos Translate | **$0** | Fair | Offline; smaller models; slower |
+| LibreTranslate free tier | **$0** | Fair | Rate-limited; not reliable at scale |
+| Human translation | **$50–200+** | Best | Only for the 5–10% review sample per the plan's quality-control step |
+
+**Cheapest viable path (~$0–5 for 5K rows):**
+1. Translate all rows with GPT-4o mini (or Opus-MT if you want $0) into a draft JSONL.
+2. Review 5–10% via a cheap LLM consistency check (translate back → compare) — near-zero cost.
+3. Human spot-check only the flagged rows (maybe 50 rows → negligible cost).
+
+**Total expected translation spend for this project: $0–30**, dominated by the review method you pick. The model's training-data size (5K rows × ~50 words) is tiny by LLM standards — translation cost is not a real bottleneck here; data quality and label correctness are.
+
+---
+
 ## Recommended Next Step
 
 **Phase 1: zero-shot baseline.** It requires no training data, validates the whole pipeline, and gives you the number your fine-tuned model must beat:
