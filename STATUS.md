@@ -117,6 +117,8 @@ Laya runs fine on CPU — the official Persian run was an Apple M4 at ~114 ms me
 - Batch incoming requests for throughput; add rate limiting
 - Minimum viable hardware: 2 vCPU, 2–4 GB RAM, Linux
 
+> **Jev-like API**: There is no public Jev API spec to copy — Jev is served via TypeSafe's hosted API. **FastAPI is the right choice** for Najva: the whole API is one endpoint (`POST /predict` = `Router.predict`), and FastAPI auto-generates Swagger (`/docs`) that looks Jev-shaped. ~40 lines of code; no ML-serving framework overhead needed. Skip TorchServe/BentoML (overkill for a single 322M model) and hosted inference (costs money, you lose control).
+
 ## Translation cost estimate (English → Persian, before training)
 
 ## Translation cost estimate (English → Persian, before training)
