@@ -1,0 +1,11 @@
+# Laya (The pre-trained Jev-like model)
+laya==0.3.4
+huggingface-hub
+
+# fine-tuning stack
+transformers>=4.48.0
+peft>=0.14.0
+bitsandbytes>=0.44.0
+accelerate>=1.2.0
+datasets>=3.0.0
+scikit-learn  # for evaluation metrics
