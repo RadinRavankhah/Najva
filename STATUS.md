@@ -27,13 +27,14 @@
 - [ ] Record baseline numbers — official Laya-multilingual reference scores: choice **58.75%**, noul **63.75%**, score (±0.5 rubric) **35.0%**, choice Brier **0.5995**
 
 ### Phase 2 — Training Data
-**Strategy: take an existing Jev-formatted decision dataset (expected English), translate it to Persian, train on it.** No adaptation of non-decision Persian datasets (FarsTail, Digikala, ArmanEmo, PerCoR, …) — they are not in the Jev `choice`/`score`/`noul` format and would need lossy conversion; dropped from the plan.
+**Strategy: take an existing Jev-formatted decision dataset (English), translate it to Persian, train on it.** No adaptation of non-decision Persian datasets (FarsTail, Digikala, ArmanEmo, PerCoR, …) — they are not in the Jev `choice`/`score`/`noul` format and would need lossy conversion; dropped from the plan.
 
 - [x] A Persian dataset downloaded (`mshojaei77/persian-gk`, 5,897 rows) — ⚠️ chat/instruction format, not decision format; not usable for this pipeline
-- [ ] Source a Jev-formatted decision dataset (expected English — e.g. `LocalLLaMA/typed-decisions` or similar typed-decision corpora) with choice / score / noul rows
-- [ ] Translate the natural-language fields (`state`, `instructions`, `criteria`) to Persian — **never** translate option keys, label indices, or soft targets (the chinese-laya "Strategy D" approach)
-- [ ] Quality check 5–10% of translated rows: natural Persian, labels still correct
-- [ ] Build `data/persian_train.jsonl` + `data/persian_val.jsonl` (format documented by `data/benchmark.example.jsonl`)
+- [x] **`data/prepare_jev_dataset.py`** — downloads OpenAGILab/Jev-dataset, converts rows to laya JSONL, splits by `source` task ✅ verified (10-row smoke test passed)
+- [x] **`data/translate_to_persian.py`** — translates `state`/`instructions`/`criteria` values to Persian; keeps `target` soft labels and option indices untouched ✅ syntax verified (engines: `gpt4o-mini`, `nllb` free offline, `argos` free offline)
+- [ ] Translate natural-language fields via `python data/translate_to_persian.py data/jev_dataset_train.jsonl --engine nllb` (first run downloads ~1GB NLLB model into the venv's HF cache)
+- [ ] Quality check 5–10% of translated rows
+- [ ] Build `data/persian_train.jsonl` + `data/persian_val.jsonl` (format: `data/benchmark.example.jsonl`)
 
 ### Phase 3 — Training (Weeks 3–4 of plan)
 - [x] Training script written (`train_laya_fa.py`) — targets laya's **real** DecisionModel architecture (marker logits + soft-CE), reuses `build_sequence`/`collate_items`; LoRA r=16 on encoder attention + trainable decision head; **NOT run yet**
@@ -88,7 +89,35 @@
 
 5. The `persian-gk` dataset in cache is Node.js/MySQL chat data — likely downloaded for a different experiment. It does **not** fit the Jev decision schema (`state` / `instructions` / `criteria` / `answer`).
 
----
+## Dataset note: OpenAGILab/Jev-dataset
+
+[OpenAGILab/Jev-dataset](https://huggingface.co/datasets/OpenAGILab/Jev-dataset) (duplicated from ZefanCai/Open-Jev) is the **best fit for Najva**: 520K rows, CC0 license, already in Jev typed-decisions format with soft targets. One row:
+
+```json
+{"state_json": "...", "question": "...", "options": ["optA", "optB", ...],
+ "target": [1.0, 0.0, 0.0], "kind": "choice", "source": "customer-control-v1", "split": "train"}
+```
+
+Mapping to laya format: `state ← state_json`, `instructions ← question`, `criteria ← options` (list → dict for choice), `answer ← argmax(target)`, `type ← kind`, `soft_target ← target`. The `mailroom-control-v1` (115K) and `browser-drone-expansion-v1` (161K) subsets are the largest; `customer-control-v1` is the customer-support one. Training tips:
+
+- Start with a **stratified 10K–50K sample** (the plan's 2K–5K minimum is conservative; this dataset lets you scale fast)
+- Split by `source` task, not by row — prevents leakage between tasks
+- `target` is already a soft distribution → use `soft_target` in the training script (better than one-hot)
+- Synthetic data → validate on the real Persian benchmark (`Jev-Persian-Benchmark`) to catch synthetic artifacts
+- Filter to `kind` you care about, or train all three jointly (the model handles mixed types)
+
+## CPU-only deployment (no GPU)
+
+Laya runs fine on CPU — the official Persian run was an Apple M4 at ~114 ms median. For a public Jev-like API:
+
+- **FastAPI + uvicorn**, single worker, model loaded once at startup
+- **fp32 model** = 1.29 GB RAM; fp16 = 644 MB — fits any 2 GB+ VPS
+- **ONNX Runtime export** (planned in Phase 5) cuts latency to ~5–15 ms on CPU — do this before going public
+- GGUF (llama.cpp) is an alternative CPU-quantized format
+- Batch incoming requests for throughput; add rate limiting
+- Minimum viable hardware: 2 vCPU, 2–4 GB RAM, Linux
+
+## Translation cost estimate (English → Persian, before training)
 
 ## Translation cost estimate (English → Persian, before training)
 
