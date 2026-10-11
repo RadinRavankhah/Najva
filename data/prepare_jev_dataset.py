@@ -1,5 +1,5 @@
 """
-Download OpenAGILab/Jev-dataset and convert to Najva's laya JSONL format.
+Download ZefanCai/Jev-dataset and convert to Najva's laya JSONL format.
 
 The Jev dataset ships as 12 control-task subsets. This script loads one or
 all of them, filters by question type / source task, and writes one JSONL
@@ -24,6 +24,20 @@ from pathlib import Path
 
 BASE_REPO = "OpenAGILab/Jev-dataset"
 REDIST_SUBSET = "release-v2-redistributable"
+ALL_SUBSETS = [
+    "release-v2-redistributable",
+    "amount-extraction-control-v1",
+    "browser-drone-expansion-v1-redistributable",
+    "citation-control-v1",
+    "context-retention-control-v1",
+    "email-selection-control-v1",
+    "entity-alignment-control-v1",
+    "ir-control-v1",
+    "mailroom-control-v1",
+    "phone-extraction-control-v1",
+    "silent-failure-control-v1",
+    "sponsor-segment-control-v1",
+]
 
 
 def _flatten_target(target):
@@ -91,10 +105,10 @@ def load_dataset_subset(subset, splits):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Convert OpenAGILab/Jev-dataset → Najva JSONL")
+    ap = argparse.ArgumentParser(description="Convert ZefanCai/Jev-dataset → Najva JSONL")
     ap.add_argument("--output-dir", default="data")
     ap.add_argument("--subset", default=REDIST_SUBSET,
-                    help=f"HF subset name (default: {REDIST_SUBSET})")
+                    help=f"HF subset name (default: {REDIST_SUBSET}; use --all-subsets for all 12)")
     ap.add_argument("--all-subsets", action="store_true",
                     help="Load ALL 12 subsets (~520 K rows) instead of the redistributable one")
     ap.add_argument("--splits", nargs="+", default=["train", "calibration", "validation", "test", "ood"],
@@ -109,47 +123,44 @@ def main():
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    if args.all_subsets:
-        subset = None  # load all configs
-        print("[warn] Loading ALL 12 subsets — ~520 K rows, ~900 MB download")
-    else:
-        subset = args.subset
-
-    raw = load_dataset_subset(subset, args.splits if args.splits else None)
+    # Determine which subset configs to process
+    subsets_to_process = ALL_SUBSETS if args.all_subsets else [args.subset]
 
     counters = Counter()
     combined = []
     per_split_files = {}
-
-    # open per-split writers
     for split in args.splits:
         path = Path(args.output_dir) / f"jev_dataset_{split}.jsonl"
         per_split_files[split] = path.open("w", encoding="utf-8")
 
-    for split_name, ds in raw.items():
-        if split_name not in per_split_files:
-            continue
-        out = per_split_files[split_name]
-        n = 0
-        for row in ds:
-            if args.sources and row["source"] not in args.sources:
+    # Load each subset sequentially (handles missing splits gracefully)
+    for subset in subsets_to_process:
+        print(f"\n[download] loading subset '{subset}' splits {args.splits} …")
+        raw = load_dataset_subset(subset, args.splits if args.splits else None)
+        for split_name, ds in raw.items():
+            if split_name not in per_split_files:
                 continue
-            if args.kinds and row["kind"] not in args.kinds:
-                continue
-            if args.limit and n >= args.limit:
-                break
-            try:
-                converted = convert_row(row)
-            except Exception as e:
-                print(f"  WARN: skipping row {row.get('id', '?')}: {e}", file=sys.stderr)
-                counters["_errors"] += 1
-                continue
-            out.write(json.dumps(converted, ensure_ascii=False) + "\n")
-            combined.append(converted)
-            counters[split_name] += 1
-            counters[row["kind"]] += 1
-            counters[row["source"]] += 1
-            n += 1
+            out = per_split_files[split_name]
+            n = 0
+            for row in ds:
+                if args.sources and row.get("source") not in args.sources:
+                    continue
+                if args.kinds and row.get("kind") not in args.kinds:
+                    continue
+                if args.limit and n >= args.limit:
+                    break
+                try:
+                    converted = convert_row(row)
+                except Exception as e:
+                    print(f"  WARN: skipping row {row.get('id', '?')}: {e}", file=sys.stderr)
+                    counters["_errors"] += 1
+                    continue
+                out.write(json.dumps(converted, ensure_ascii=False) + "\n")
+                combined.append(converted)
+                counters[split_name] += 1
+                counters[row.get("kind", "unknown")] += 1
+                counters[row.get("source", "unknown")] += 1
+                n += 1
 
     for f in per_split_files.values():
         f.close()
