@@ -9,14 +9,19 @@ EVERYTHING ELSE is copied untouched:
     criteria KEYS (opt0, opt1, …)
 
 Engines (pick one):
-    gpt4o-mini  — OpenAI API, cheapest reliable (~$0.05-0.20 per 5 K rows).
-                  Set OPENAI_API_KEY env var.
-    opus-mt     — Helsinki-NLP Opus-MT en→fa, FREE, offline.
+    gpt4o-mini  — OpenAI-compatible API, cheapest reliable (~$0.05-0.20 per 5 K rows).
+                  Reads OPENAI_API_KEY and OPENAI_BASE_URL from the local .env file
+                  (see .env.example). CLI --api-key / --base-url override the .env.
+    nllb        — facebook/nllb-200-distilled-600M, FREE, offline (first run downloads ~1 GB).
     argos       — Argos Translate, FREE, offline (pip install argostranslate).
+
+Credentials are loaded from the project-local .env (never committed):
+    OPENAI_API_KEY=sk-...
+    OPENAI_BASE_URL=https://api.openai.com/v1   # or any OpenAI-compatible endpoint
 
 Usage:
     python data/translate_to_persian.py data/jev_dataset_train.jsonl
-    python data/translate_to_persian.py data/jev_dataset.jsonl --engine opus-mt --limit 500
+    python data/translate_to_persian.py data/jev_dataset.jsonl --engine nllb --limit 500
     python data/translate_to_persian.py data/jev_dataset.jsonl --engine gpt4o-mini
 """
 import argparse
@@ -25,13 +30,16 @@ import os
 import sys
 import time
 from pathlib import Path
+from dotenv import load_dotenv
 
+# Load the project-root .env regardless of the current working directory
+load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 # ------------------------------------------------------------------ engines
 
-def _translate_gpt4o_mini(texts, api_key, batch=16):
+def _translate_gpt4o_mini(texts, api_key=None, base_url=None, batch=16):
     import openai
-    client = openai.OpenAI(api_key=api_key)
+    client = openai.OpenAI(api_key=api_key, base_url=base_url)
     out = []
     for i in range(0, len(texts), batch):
         batch_texts = texts[i:i + batch]
@@ -102,25 +110,40 @@ ENGINES = {
 # ------------------------------------------------------------------ main
 
 def translate_row(row, engine_fn, **kw):
-    """Translate a single row's text fields via engine_fn(list_of_texts) → list."""
+    """Translate a single row's text fields via engine_fn(list_of_texts) → list.
+
+    Only state / instructions / criteria VALUES are sent to the translator.
+    Everything else (keys, answer, soft_target, type, …) is preserved exactly.
+    """
     texts, fields = [], []
 
-    texts.append(row["state"]); fields.append("state")
-    texts.append(row["instructions"]); fields.append("instructions")
+    texts.append(row["state"]); fields.append(("state",))
+    texts.append(row["instructions"]); fields.append(("instructions",))
     crit = row.get("criteria") or {}
     if isinstance(crit, dict):
         for k, v in crit.items():
-            texts.append(v); fields.append(f"criteria:{k}")
+            texts.append(v); fields.append(("criteria", k))
     elif isinstance(crit, list):
         for j, v in enumerate(crit):
-            texts.append(v); fields.append(f"criteria[{j}]")
+            texts.append(v); fields.append(("criteria", j))
 
-    translated = engine_fn(texts, **kw) if len(texts) > 1 else engine_fn(texts)
+    translated = engine_fn(texts, **kw)
 
-    it = iter(translated)
+    # copy the row and a fresh copy of criteria so we place translations back
+    # into the SAME nested structure (never as flat "criteria:key" top-level keys)
     out = {**row}
-    for f in fields:
-        out[f] = next(it)
+    if isinstance(crit, dict):
+        out["criteria"] = dict(crit)
+    elif isinstance(crit, list):
+        out["criteria"] = list(crit)
+
+    for field, value in zip(fields, translated):
+        if field[0] == "state":
+            out["state"] = value
+        elif field[0] == "instructions":
+            out["instructions"] = value
+        elif field[0] == "criteria":
+            out["criteria"][field[1]] = value
     return out
 
 
@@ -129,7 +152,8 @@ def main():
     ap.add_argument("input", help="Input JSONL (English)")
     ap.add_argument("--output", default=None, help="Output JSONL (default: input with .fa.jsonl)")
     ap.add_argument("--engine", default="gpt4o-mini", choices=list(ENGINES))
-    ap.add_argument("--api-key", default=None, help="OpenAI API key (or set OPENAI_API_KEY)")
+    ap.add_argument("--api-key", default=None, help="API key (overrides OPENAI_API_KEY from .env)")
+    ap.add_argument("--base-url", default=None, help="OpenAI-compatible base URL (overrides OPENAI_BASE_URL from .env)")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--resume", action="store_true",
                      help="Skip rows already present in output (by question_id)")
@@ -165,9 +189,13 @@ def main():
     engine_fn = ENGINES[args.engine]
     kw = {}
     if args.engine == "gpt4o-mini":
-        kw["api_key"] = args.api_key or os.environ.get("OPENAI_API_KEY")
+        # Priority: CLI flag > .env / environment variable
+        kw["api_key"] = args.api_key or os.environ.get("OPENAI_API_KEY") or os.environ.get("API_KEY")
+        base_url = args.base_url or os.environ.get("OPENAI_BASE_URL") or os.environ.get("BASE_URL")
+        kw["base_url"] = base_url.strip() if base_url else None
         if not kw["api_key"]:
-            raise SystemExit("gpt4o-mini: set OPENAI_API_KEY env var or pass --api-key")
+            raise SystemExit("gpt4o-mini: set OPENAI_API_KEY in .env (or pass --api-key)")
+        print(f"[gpt4o-mini] base_url={kw['base_url'] or 'https://api.openai.com/v1 (default)'}")
 
     errors = 0
     translated = 0
