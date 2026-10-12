@@ -119,36 +119,16 @@ Laya runs fine on CPU — the official Persian run was an Apple M4 at ~114 ms me
 
 > **Jev-like API**: There is no public Jev API spec to copy — Jev is served via TypeSafe's hosted API. **FastAPI is the right choice** for Najva: the whole API is one endpoint (`POST /predict` = `Router.predict`), and FastAPI auto-generates Swagger (`/docs`) that looks Jev-shaped. ~40 lines of code; no ML-serving framework overhead needed. Skip TorchServe/BentoML (overkill for a single 322M model) and hosted inference (costs money, you lose control).
 
-## Translation cost estimate (English → Persian, before training)
+## Translation cost estimate (English → Persian)
 
-## Translation cost estimate (English → Persian, before training)
+**Measured** (tiktoken input count + real API calibration): **$1.88 for 5,200 rows** (~$0.36 / 1,000 rows), **~$188 for the full 520K dataset**. Full method, numbers, and optimisations: [`docs/translation_cost.md`](docs/translation_cost.md).
 
-**Workload:** translate the natural-language fields (`state`, `instructions`, `criteria`) of a Jev-formatted English dataset while keeping option keys, label indices, and soft targets untouched.
+Reproduce:
+```powershell
+python data/estimate_translation_cost.py data/persian_train_sample.jsonl --measure 30 --rows 520199
+```
 
-| Source dataset size | Avg words/row | Total English words | Total tokens (×1.3) |
-|:---|:---:|---:|---:|
-| POC (500 examples) | ~50 | 25,000 | 325K |
-| Production (5,000) | ~50 | 250,000 | 3.25M |
-| Research quality (10,000+) | ~50 | 500,000+ | 6.5M+ |
-
-**Estimated cost to translate 5,000 examples (production):**
-
-| Method | Cost | Quality | Notes |
-|:---|:---|:---|:---|
-| **GPT-4o mini / Claude Haiku** (API) | **$0.05–0.20** | Good — prompt to keep keys/labels untouched | Cheapest reliable option; batch with `messages` array |
-| **GPT-4o / Claude Sonnet 4** (API) | **$0.80–2.00** | Better on nuance, sarcasm, تعارف | Use for a 5–10% sample instead of all rows |
-| Google Cloud / DeepL API | **$25–30** | Good | Per-character pricing hurts; no structural awareness of Jev rows |
-| Helsinki-NLP Opus-MT (en→fa) | **$0** | Fair | Offline; `opus-mt-en-fa`; may mangage Persian script/digits |
-| Argos Translate | **$0** | Fair | Offline; smaller models; slower |
-| LibreTranslate free tier | **$0** | Fair | Rate-limited; not reliable at scale |
-| Human translation | **$50–200+** | Best | Only for the 5–10% review sample per the plan's quality-control step |
-
-**Cheapest viable path (~$0–5 for 5K rows):**
-1. Translate all rows with GPT-4o mini (or Opus-MT if you want $0) into a draft JSONL.
-2. Review 5–10% via a cheap LLM consistency check (translate back → compare) — near-zero cost.
-3. Human spot-check only the flagged rows (maybe 50 rows → negligible cost).
-
-**Total expected translation spend for this project: $0–30**, dominated by the review method you pick. The model's training-data size (5K rows × ~50 words) is tiny by LLM standards — translation cost is not a real bottleneck here; data quality and label correctness are.
+Engines available in `data/translate_to_persian.py`: `gpt4o-mini` (paid, best), `nllb` (free, offline), `argos` (free, offline).
 
 ---
 
