@@ -6,3 +6,4 @@
 /data/jev_dataset*.jsonl
 /results/*.json
 /data/data
+.env
