@@ -1,0 +1,5 @@
+model,task,n,accuracy,brier_mean,ece,flip_rate,flip_n
+convaiinnovations/laya-multilingual,choice,240,0.5667,0.5867,0.2879,,
+convaiinnovations/laya-multilingual,score,80,0.3875,0.7249,0.1879,,
+convaiinnovations/laya-multilingual,noul,160,0.5813,0.3014,0.2605,,
+convaiinnovations/laya-multilingual,overall,480,0.5417,0.5146,0.2408,0.275,240
