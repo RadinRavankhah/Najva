@@ -65,7 +65,7 @@ Large language models make decisions by generating reasoning — powerful, but s
 Requires Python 3.10+ and (ideally) an NVIDIA GPU with ≥4 GB VRAM.
 
 ```powershell
-git clone https://github.com/<you>/Najva
+git clone https://github.com/RadinRavankhah/Najva
 cd Najva
 
 python -m venv venv
