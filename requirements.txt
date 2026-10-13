@@ -9,3 +9,14 @@ bitsandbytes>=0.44.0
 accelerate>=1.2.0
 datasets>=3.0.0
 scikit-learn  # for evaluation metrics
+
+# serving (api.py)
+fastapi
+uvicorn
+pydantic
+
+# data pipeline (translate_to_persian.py, estimate_translation_cost.py)
+openai
+tiktoken
+python-dotenv
+# argostranslate  # optional free offline engine (--engine argos); pip install when needed
