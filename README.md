@@ -50,13 +50,20 @@ Large language models make decisions by generating reasoning — powerful, but s
 ## Repository layout
 
 ```
-├── benchmark_zero_shot.py       # Zero-shot baseline runner: base checkpoint vs. benchmark
-├── train_laya_fa.py             # LoRA fine-tuning script targeting laya's real architecture
+├── api.py                        # Jev-style FastAPI server (POST /v1/systemone)
+├── benchmark_zero_shot.py        # Zero-shot baseline runner: base checkpoint vs. benchmark
+├── train_laya_fa.py              # LoRA fine-tuning script targeting laya's real architecture
 ├── data/
-│   └── benchmark.example.jsonl  # Reference format for benchmark/training rows
-├── results/                     # Baseline & evaluation outputs (JSON)
-├── plans/                       # Project planning documents (gitignored)
-├── STATUS.md                    # Living checklist of project status
+│   ├── benchmark.jsonl           # 480-question Persian benchmark (derived from Jev-Persian-Benchmark)
+│   ├── benchmark.example.jsonl   # Reference format for benchmark/training rows
+│   ├── prepare_jev_dataset.py    # Download OpenAGILab/Jev-dataset → Najva JSONL format
+│   ├── translate_to_persian.py   # English → Persian (gpt-4o-mini / nllb / argos engines)
+│   ├── estimate_translation_cost.py  # gpt-4o-mini USD cost estimate for translation
+│   └── persian_train_sample.jsonl    # 5,200-row sample for smoke tests & cost estimates
+├── docs/
+│   └── translation_cost.md       # Measured translation cost breakdown (~$0.36 / 1K rows)
+├── results/                      # Baseline outputs & comparison (JSON gitignored; MD/CSV summary committed)
+├── STATUS.md                     # Living checklist of project status
 └── requirements.txt
 ```
 
@@ -94,24 +101,53 @@ python train_laya_fa.py --train data/persian_train.jsonl --val data/persian_val.
 
 The script consumes the same row format as the benchmark (`state` / `type` / `instructions` / `criteria` / `answer`; soft targets supported). With `--merge`, the output folder becomes a self-contained checkpoint loadable via `laya.load()`.
 
+**Training data** — Najva trains on the [OpenAGILab/Jev-dataset](https://huggingface.co/datasets/OpenAGILab/Jev-dataset) (already in the Jev typed-decision format with soft targets), translated English → Persian:
+
+```powershell
+# 1. Download & convert to Najva JSONL (default: redistributable subset ~114K rows; --all-subsets for all 520K)
+python data/prepare_jev_dataset.py
+
+# 2. Estimate translation cost (optional; needs OPENAI_API_KEY in .env)
+python data/estimate_translation_cost.py data/persian_train_sample.jsonl --measure 30 --rows 520199
+
+# 3. Translate the English rows to Persian (resumable; failed rows land in a .failed.jsonl)
+python data/translate_to_persian.py data/jev_dataset_train.jsonl --engine gpt4o-mini
+```
+
+`--engine nllb` (free, offline, ~1 GB) and `--engine argos` (free, offline) are alternatives to `gpt4o-mini`. Measured cost for the paid engine: **$1.88 per 5,200 rows** (~$0.36 / 1,000 rows) — see [`docs/translation_cost.md`](docs/translation_cost.md).
+
+**Serve as an API** — [`api.py`](api.py) wraps the model in a Jev-shaped FastAPI endpoint:
+
+```powershell
+uvicorn api:app --host 0.0.0.0 --port 8000
+```
+
+```bash
+curl http://localhost:8000/v1/systemone \
+  -H "Content-Type: application/json" \
+  -d '{"state":"متن نمونه","model":"najva-latest","questions":{"q1":{"type":"noul","instructions":"آیا این پیام فوری است؟"}}}'
+```
+
+Answers mirror the Jev response schema (`noul` / `choice` / `score` objects with `probabilities`, `confidence`, `usage`); `GET /v1/models` and `GET /health` are also exposed, and FastAPI serves interactive Swagger docs at `/`. Optional bearer-token auth: set `Najva_API_KEY`. Until fine-tuning lands, the server uses the base `laya-multilingual` checkpoint under aliases like `najva-latest` — to switch it to the trained model, point `CHECKPOINT_REPO` at your checkpoint.
+
 ## Evaluation
 
 Najva is evaluated against the [Jev-Persian-Benchmark](https://github.com/ArmanJR/Jev-Persian-Benchmark): 480 authored general-Persian questions (80 scenarios × 3 choice + 2 noul + 1 score) across 10 categories — intent, sentiment, negation, idioms, pragmatics/تعارف, scenario decisions, moderation, semantic matching, and extraction.
 
-The zero-shot Laya-multilingual reference scores on the general set — the numbers Najva's fine-tuning aims to beat:
+The zero-shot baseline over the base Laya-multilingual checkpoint has been run end-to-end on all 480 questions — these measured numbers are what Najva's fine-tuning aims to beat:
 
-| Metric | Laya-multilingual (zero-shot) |
-|:---|:---|
-| Choice accuracy (240 q) | 58.75% |
-| Noul accuracy (160 q) | 63.75% |
-| Score within ±0.5 rubric levels (80 q) | 35.0% |
-| Choice Brier ↓ | 0.5995 |
-| Noul Brier ↓ | 0.2823 |
-| Score MAE ↓ | 0.7238 |
+| Task | n | Accuracy | Brier (mean) | ECE |
+|:---|---:|---:|---:|---:|
+| Choice | 240 | 56.67% | 0.5867 | 0.2879 |
+| Score (within ±0.5 rubric levels) | 80 | 38.75% | 0.7249 | 0.1879 |
+| Noul (p ≥ 0.5) | 160 | 58.13% | 0.3014 | 0.2605 |
+| Overall | 480 | 54.17% | 0.5146 | 0.2408 |
+
+Choice option-flip rate: **27.5%** — above the <5% invariance target, so fine-tuning must bring it down. For reference, the [Jev-Persian-Benchmark](https://github.com/ArmanJR/Jev-Persian-Benchmark) publishes official Laya-multilingual scores of choice 58.75%, noul 63.75%, and score (±0.5) 35.0% on the same set. Full side-by-side: [`results/BENCHMARK_COMPARISON.md`](results/BENCHMARK_COMPARISON.md); raw records: `results/zero_shot_baseline.json`.
 
 ## Project status
 
-Development is in progress — see [STATUS.md](STATUS.md) for the live checklist. Environment, inference verification, the benchmark runner, and the training script are complete; the zero-shot baseline run and training-data translation are next.
+Development is in progress — see [STATUS.md](STATUS.md) for the live checklist. The environment, end-to-end inference check, benchmark runner, and the zero-shot baseline run are complete; the Jev-dataset preparation and translation scripts are written and verified, with the full English→Persian training-data run next, followed by fine-tuning and evaluation against the baseline above.
 
 ## Acknowledgements
 
